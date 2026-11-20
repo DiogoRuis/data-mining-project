@@ -12,7 +12,10 @@ __MACOSX/
 data/posts_compact.parquet
 data/posts_clean.parquet
 
-# Report and course material (not part of the repository)
+# Report, course material and personal notes (not part of the repository)
 *.pdf
 *.tex
 CLAUDE.md
+material/
+docs/
+relatorio_passos.md
