@@ -52,9 +52,9 @@ jupyter nbconvert --to notebook --execute --inplace data_mining_project.ipynb --
 ```
 
 * **First run.** The CSV is read in chunks and converted into Parquet caches in `data/` (`posts_compact.parquet`
-  ~390 MB, `posts_clean.parquet` ~330 MB). Later runs reuse them; delete them to recompute from the raw data.
+  ~400 MB, `posts_clean.parquet` ~340 MB). Later runs reuse them; delete them to recompute from the raw data.
 * **Resources.** Designed for a 16 GB laptop. A full run from scratch, CSV conversion included, takes about
-  15 minutes (Windows 11, Python 3.12).
+  30 minutes (Windows 11, Python 3.12); later runs, which reuse the Parquet caches, take about 17 minutes.
 * **Task 2 only.** Task 2 needs only `data/user_profiles.parquet`: run Section 0 (setup), then Task 2.
 * **Reproducibility.** Every random step uses `RANDOM_STATE = 42`.
 
@@ -81,43 +81,53 @@ every answer to the section where it is applied. In short:
 
 ## Notebook structure
 
-* **0. Setup** – CSV → Parquet conversion with composite-key hashes, derived text descriptors, biography hash, list
-  counts and parse status of numeric fields; map of the Q&A answers.
+* **0. Setup** – CSV → Parquet conversion with composite-key hashes, text descriptors (length and words of the text
+  written by the account, i.e. without the anonymised mentions and links), text and biography hashes, list counts and
+  parse status of numeric fields, with a real post shown before and after the transformation; map of the Q&A answers.
 * **Task 1 – Data Understanding and Preparation**
-  * 1.1 Data semantics (attribute types).
-  * 1.2 Data quality – missing values (bar chart by class), syntactic and semantic accuracy, duplicates with composite
-    keys (pattern analysis of the duplicated keys), partial reply identifiers, cleaning, **timeliness of
-    `post_time`** (publication vs collection time), outliers (IQR rule).
-  * 1.3 Distributions – bar charts, histograms (Sturges' rule), time series, descriptive statistics (incl. MAD).
+  * 1.1 Data semantics – every attribute with level, type, a real example value and its use in the project; overview
+    of the dataset by operation and class.
+  * 1.2 Data quality – missing values (bar chart by class), syntactic and semantic accuracy (including impossible
+    follower counts), duplicates with composite keys, the same account id in several operations, partial reply
+    identifiers, comparison of two substitutions for the invalid counts (account median vs time neighbours),
+    cleaning, **timeliness of `post_time`** (publication vs collection time, per operation), outliers per attribute.
+  * 1.3 Distributions – summary statistics of numerical and nominal attributes, bar charts, histograms (Sturges'
+    rule), time series, long-tailed attributes on linear vs logarithmic scale.
   * 1.4 Correlations – Pearson, Spearman, scatter plots, contingency tables, χ², mutual information.
-  * 1.5 User profiling – 33 indicators per account (activity & time, interaction, content & coordination, account),
-    each with description and formula; IO vs control comparison, conditional box plots, radar plot, correlations;
-    1.5.4 shared profile descriptions.
+  * 1.5 User profiling – 33 indicators per account, each with formula, intuition, range and an example, and a worked
+    example on a real account; minimum number of posts per profile; IO vs control comparison, conditional box plots,
+    radar plot, correlations and redundancies; 1.5.4 shared profile descriptions.
 * **Task 2 – Clustering Analysis**
-  * 2.1 Attribute selection (13 behavioural attributes), log transform, IQR capping, z-score (vs min-max), PCA for
-    visualisation.
+  * 2.1 Attribute selection (13 behavioural attributes), log transform, IQR capping, z-score (vs min-max), with the
+    effect of every step; PCA for visualisation.
   * 2.2 K-means – random initialisation with multiple runs, SSE / BSS / silhouette, SSE against randomised data,
     centroids, parallel coordinates, entropy and purity; 2.2.4 K-means inside every operation.
-  * 2.3 DBSCAN – k-distance plots, grid search on Eps / MinPts, other sets of input attributes (two subsets and a PCA
-    projection), core / border / noise points, conclusion on whether DBSCAN works on these data.
-  * 2.4 Hierarchical – MIN, MAX, group average and Ward on a stratified sample of 10,000 accounts (the proximity matrix
-    of all 69k profiles would need 19 GB), dendrograms, proximity–incidence correlation.
+  * 2.3 DBSCAN – cost of the neighbourhoods and stratified sample, k-distance plots, grid search on Eps / MinPts, other
+    sets of input attributes, core / border / noise points, analysis of the noise, stability on other samples,
+    conclusion on whether DBSCAN works on these data.
+  * 2.4 Hierarchical – MIN, MAX, group average and Ward on a stratified sample of 10,001 accounts (the proximity matrix
+    of all 69k profiles would need 19 GB), dendrograms on a common scale, proximity–incidence correlation, stability of
+    Ward's method on other samples.
   * 2.5 Comparison – internal and external indices, mutual information between clusterings, ordered similarity
-    matrices, strengths and limitations.
-  * 2.6 Optional – Gaussian mixture model fitted with the EM algorithm, BIC model selection, soft assignments.
+    matrices (with a reading guide), strengths and limitations.
+  * 2.6 Optional – Gaussian mixture model fitted with the EM algorithm (step by step, random initialisation as in the
+    slides), BIC model selection, soft assignments, comparison with the other methods.
 
 ## Main results (short)
 
 * `post_time` is the real publication time (no repost or reply precedes its original), but control accounts are
-  observed only in a **single-day window of at most ~100 posts ending at 23:59 UTC**: volume and time features are
-  therefore excluded from clustering.
+  observed in **windows of at most 99 posts per account and day, ending at 23:59 UTC** (a single day for 94.9% of
+  them), on days on which the operation was active: volume and time features are therefore excluded from clustering.
+* Data quality: besides invalid tokens, some follower counts are impossible (above 10^9); invalid counts are replaced by
+  the values of the neighbouring posts of the same account, which reproduce hidden values better than the account
+  median. Text lengths are measured without the anonymised mentions and links, which are 39% of the raw characters.
 * IO accounts are younger, less followed, publish texts copied from other accounts of their operation, amplify their
   own network, use more publishing clients per account and much more often share an identical biography with other
-  accounts of their operation (12% vs 2% of the accounts with a biography).
+  accounts of their operation (12% vs 2% of the accounts with a biography); the length of what they write is the same.
 * Profiles form a continuum and no method reproduces the IO/control label, but K-means, Ward and DBSCAN agree on two
   behaviours in which IO accounts are strongly over-represented – **network amplifiers** and **copy-paste
-  broadcasters**. DBSCAN isolates almost pure IO groups (98–100% IO); its large noise share persists with every
-  parameter and attribute set tested, so it reflects the data rather than the parameters.
+  broadcasters**. DBSCAN isolates almost pure IO groups (97–100% IO) that reappear on other samples; its large noise share persists with
+  every parameter and attribute set tested, so it reflects the data rather than the parameters.
 * Clustering each operation separately gathers 97–98% of the IO accounts of Iran_4 and UAE in one cluster of young,
   little-followed accounts; the Gaussian mixture gathers about three quarters of the IO accounts in the two components
   of accounts with coordination signals.
